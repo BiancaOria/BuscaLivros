@@ -6,14 +6,16 @@ public class Main {
 
         try {
             // Caminho do arquivo
-            Path caminhoArquivo = Path.of("C:\\Users\\55859\\Downloads\\Buscador\\Amostras\\Dracula.txt");
+            //Path caminhoArquivo = Path.of("C:\\Users\\55859\\Downloads\\Buscador\\Amostras\\Dracula.txt");
+            Path caminhoArquivo = Path.of("C:\\Users\\loren\\Downloads\\Compt Paralela\\Trabalho do Inferno\\BuscaLivros\\Amostras\\Dracula.txt");
 
             // Palavra alvo
-            String palavra = "Dracula";
+            String palavra = "the";
 
             // Número de threads paralelas (ajuste automático é recomendado)
-            int numThreads = 10;
-            // Você também pode usar: int numThreads = 10;
+            //int numThreads = 10;
+            int numThreads = Runtime.getRuntime().availableProcessors();
+
 
             System.out.println("Usando " + numThreads + " threads no paralelo");
             System.out.println("----------------------------------------");
@@ -39,6 +41,15 @@ public class Main {
             System.out.println("ParallelCPU (" + numThreads + " threads): "
                     + countParalelo + " ocorrências em "
                     + (tempoFim - tempoInicio) + " ms");
+
+            tempoInicio = System.currentTimeMillis();
+            int countGPU = ParallelGPU.countWordsGPU(texto, palavra);
+            tempoFim = System.currentTimeMillis();
+
+            System.out.println("ParallelGPU (OpenCL): "
+                    + countGPU + " ocorrências em "
+                    + (tempoFim - tempoInicio) + " ms");
+
 
         } catch (Exception e) {
             e.printStackTrace();
