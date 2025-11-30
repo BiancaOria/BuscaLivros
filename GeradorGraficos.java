@@ -6,47 +6,73 @@ import java.nio.file.*;
 import javax.imageio.ImageIO;
 import java.util.*;
 import java.util.List;
+import java.util.stream.Collectors;
 
-/**
- * GeradorGraficos
- * - Lê CSVs em: Resultados/serial, Resultados/cpu, Resultados/gpu
- * - Gera imagens (PNG) em: imagens/serial.png, imagens/cpu.png, imagens/gpu.png
- * - Usa apenas Swing para desenhar (renderiza JPanel em BufferedImage)
- * - Cores atualizadas para melhor contraste e harmonia.
- */
 public class GeradorGraficos {
-
-    // Cores por livro
-    private static final Map<String, Color> BOOK_COLORS = new HashMap<>();
-    static {
-        BOOK_COLORS.put("DonQuixote", Color.decode("#6E44FF")); // Roxo
-        BOOK_COLORS.put("Dracula", Color.decode("#FF90B3"));    // Rosa
-        // MobyDick: Ciano escuro/harmônico (DarkCyan), visível e com bom contraste
-        BOOK_COLORS.put("MobyDick", Color.decode("#008B8B"));
-    }
 
     private static final String BASE = "Resultados";
     private static final String OUTDIR = "imagens";
+
+    // Mapa global de cores para garantir consistência entre os 3 gráficos
+    private static final Map<String, Color> GLOBAL_COLOR_MAP = new HashMap<>();
 
     public static void gerarGraficos() {
         try {
             Files.createDirectories(Paths.get(OUTDIR));
         } catch (IOException ignored) {}
 
-        // Coleta dados
-        Map<String, Map<Integer, Long>> serial = lerSerial();
-        Map<String, Map<Integer, Map<Integer, Long>>> cpu = lerCPU();
-        Map<String, Map<Integer, Long>> gpu = lerGPU();
+        GLOBAL_COLOR_MAP.clear();
 
-        // Gera PNGs
-        gerarPNGSerial(serial, OUTDIR + "/serial.png");
-        gerarPNGCpu(cpu, OUTDIR + "/cpu.png");
-        gerarPNGGPU(gpu, OUTDIR + "/gpu.png");
+        // 1. Ler todos os dados
+        Map<String, Map<Integer, Long>> serialData = lerSerial();
+        Map<String, Map<Integer, Map<Integer, Long>>> cpuData = lerCPU();
+        Map<String, Map<Integer, Long>> gpuData = lerGPU();
 
-        System.out.println("✅ Gráficos gerados em: " + OUTDIR + "/ (serial.png, cpu.png, gpu.png)");
+        // 2. Coletar todas as chaves únicas (Livro + Palavra) de todos os datasets
+        // para gerar uma paleta de cores única e consistente.
+        Set<String> todasChaves = new TreeSet<>(); // TreeSet ordena alfabeticamente
+        todasChaves.addAll(serialData.keySet());
+        todasChaves.addAll(cpuData.keySet());
+        todasChaves.addAll(gpuData.keySet());
+
+        gerarCoresDinamicas(todasChaves);
+
+        // 3. Gerar Gráficos
+        System.out.println("Gerando gráfico Serial...");
+        gerarPNGSerial(serialData, OUTDIR + "/serial.png");
+
+        System.out.println("Gerando gráfico CPU...");
+        gerarPNGCpu(cpuData, OUTDIR + "/cpu.png");
+
+        System.out.println("Gerando gráfico GPU...");
+        gerarPNGGPU(gpuData, OUTDIR + "/gpu.png"); // Reutiliza lógica similar ao Serial
+
+        System.out.println("✅ Gráficos gerados com sucesso na pasta: " + OUTDIR);
     }
 
-    // ----------------- Leitura dos CSVs -----------------
+    // -------------------------------------------------------------------------
+    //                        SISTEMA DE CORES
+    // -------------------------------------------------------------------------
+    private static void gerarCoresDinamicas(Set<String> keys) {
+        int total = keys.size();
+        int i = 0;
+        for (String key : keys) {
+            // Gera uma cor baseada no Hue (Matiz) dividindo o espectro igualmente
+            float hue = (float) i / (float) total;
+            // Saturação 0.7 e Brilho 0.85 garantem cores vivas e legíveis
+            Color c = Color.getHSBColor(hue, 0.75f, 0.85f);
+            GLOBAL_COLOR_MAP.put(key, c);
+            i++;
+        }
+    }
+
+    private static Color getColor(String key) {
+        return GLOBAL_COLOR_MAP.getOrDefault(key, Color.BLACK);
+    }
+
+    // -------------------------------------------------------------------------
+    //                        LEITURA DE ARQUIVOS
+    // -------------------------------------------------------------------------
 
     private static Map<String, Map<Integer, Long>> lerSerial() {
         Map<String, Map<Integer, Long>> resultado = new TreeMap<>();
@@ -58,15 +84,18 @@ public class GeradorGraficos {
                 String nomeArquivo = p.getFileName().toString();
                 String book = extrairNomeLivro(nomeArquivo);
                 try (BufferedReader br = Files.newBufferedReader(p)) {
-                    String header = br.readLine();
+                    br.readLine(); // Header
                     String linha;
                     while ((linha = br.readLine()) != null) {
                         String[] cols = linha.split(",");
-                        if (cols.length >= 5) {
-                            int exec = Integer.parseInt(cols[1].trim());
-                            long tempo = Long.parseLong(cols[4].trim());
-                            resultado.putIfAbsent(book, new TreeMap<>());
-                            resultado.get(book).put(exec, tempo);
+                        // Serial Header: Livro,Palavra,Execucao,Threads,Count,TempoMs
+                        if (cols.length >= 6) {
+                            String word = cols[1].trim();
+                            int exec = Integer.parseInt(cols[2].trim());
+                            long tempo = Long.parseLong(cols[5].trim()); // Coluna 5 é Tempo
+                            String key = book + " ('" + word + "')";
+                            resultado.putIfAbsent(key, new TreeMap<>());
+                            resultado.get(key).put(exec, tempo);
                         }
                     }
                 } catch (Exception ignored) {}
@@ -86,17 +115,21 @@ public class GeradorGraficos {
                 String book = extrairNomeLivro(nomeArquivo);
                 Integer threadNum = extrairThreads(nomeArquivo);
                 if (threadNum == null) return;
+
                 try (BufferedReader br = Files.newBufferedReader(p)) {
-                    String header = br.readLine();
+                    br.readLine();
                     String linha;
                     while ((linha = br.readLine()) != null) {
                         String[] cols = linha.split(",");
-                        if (cols.length >= 5) {
-                            int exec = Integer.parseInt(cols[1].trim());
-                            long tempo = Long.parseLong(cols[4].trim());
-                            out.putIfAbsent(book, new TreeMap<>());
-                            out.get(book).putIfAbsent(threadNum, new TreeMap<>());
-                            out.get(book).get(threadNum).put(exec, tempo);
+                        // CPU Header: Livro,Palavra,Execucao,Threads,Count,TempoMs
+                        if (cols.length >= 6) {
+                            String word = cols[1].trim();
+                            int exec = Integer.parseInt(cols[2].trim());
+                            long tempo = Long.parseLong(cols[5].trim()); // Coluna 5 é Tempo
+                            String key = book + " ('" + word + "')";
+                            out.putIfAbsent(key, new TreeMap<>());
+                            out.get(key).putIfAbsent(threadNum, new TreeMap<>());
+                            out.get(key).get(threadNum).put(exec, tempo);
                         }
                     }
                 } catch (Exception ignored) {}
@@ -115,15 +148,19 @@ public class GeradorGraficos {
                 String nomeArquivo = p.getFileName().toString();
                 String book = extrairNomeLivro(nomeArquivo);
                 try (BufferedReader br = Files.newBufferedReader(p)) {
-                    String header = br.readLine();
+                    br.readLine();
                     String linha;
                     while ((linha = br.readLine()) != null) {
                         String[] cols = linha.split(",");
-                        if (cols.length >= 4) {
-                            int exec = Integer.parseInt(cols[1].trim());
-                            long tempo = Long.parseLong(cols[cols.length - 1].trim());
-                            resultado.putIfAbsent(book, new TreeMap<>());
-                            resultado.get(book).put(exec, tempo);
+                        // GPU Header na Main: Livro,Palavra,Execucao,Count,TempoMs
+                        // Índices:            0     1       2        3     4
+                        if (cols.length >= 5) {
+                            String word = cols[1].trim();
+                            int exec = Integer.parseInt(cols[2].trim());
+                            long tempo = Long.parseLong(cols[4].trim()); // Coluna 4 é Tempo na GPU
+                            String key = book + " ('" + word + "')";
+                            resultado.putIfAbsent(key, new TreeMap<>());
+                            resultado.get(key).put(exec, tempo);
                         }
                     }
                 } catch (Exception ignored) {}
@@ -132,14 +169,12 @@ public class GeradorGraficos {
         return resultado;
     }
 
-    // ----------------- Helpers de parsing -----------------
-
     private static String extrairNomeLivro(String filename) {
         String base = filename;
-        int idx = base.indexOf("_exec");
-        if (idx > 0) base = base.substring(0, idx);
+        // Tenta limpar sufixos conhecidos para pegar o nome puro
+        if (base.contains("_")) base = base.substring(0, base.indexOf("_"));
         if (base.endsWith(".csv")) base = base.substring(0, base.length() - 4);
-        return base;
+        return base.trim();
     }
 
     private static Integer extrairThreads(String filename) {
@@ -147,338 +182,279 @@ public class GeradorGraficos {
         if (tIdx >= 0) {
             String tail = filename.substring(tIdx + "_threads".length());
             if (tail.endsWith(".csv")) tail = tail.substring(0, tail.length() - 4);
-            try {
-                return Integer.parseInt(tail);
-            } catch (NumberFormatException ignored) {}
+            try { return Integer.parseInt(tail); } catch (Exception e) { return null; }
         }
         return null;
     }
 
-    // ----------------- Desenho e exportação -----------------
-
-    private static void gerarPNGSerial(Map<String, Map<Integer, Long>> dados, String outPath) {
-        if (dados.isEmpty()) {
-            System.out.println("⚠ serial: sem dados para gerar gráfico");
-            return;
-        }
-
-        int W = 1000, H = 420;
-        BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = img.createGraphics();
-        aplicarQualidade(g);
-
-        g.setColor(Color.WHITE);
-        g.fillRect(0,0,W,H);
-        drawAxes(g, W, H, "Execução", "Tempo (ms)", 40);
-
-        int[] execs = {1,2,3};
-        int startX = 120;
-        int gapExec = 220;
-
-        List<String> livros = new ArrayList<>(dados.keySet());
-        int booksCount = livros.size();
-        int bookOffsetStep = 30;
-        int maxOffsetTotal = (booksCount-1)*bookOffsetStep;
-
-        long maxTempo = maxTempoSerialOrGPU(dados);
-
-        for (int bIdx = 0; bIdx < livros.size(); bIdx++) {
-            String book = livros.get(bIdx);
-            Color c = colorForBook(book);
-            g.setColor(c);
-            Map<Integer, Long> mapExec = dados.get(book);
-            for (int e = 0; e < execs.length; e++) {
-                int exec = execs[e];
-                if (!mapExec.containsKey(exec)) continue;
-                long tempo = mapExec.get(exec);
-                int baseX = startX + e * gapExec;
-                int x = baseX - maxOffsetTotal/2 + bIdx * bookOffsetStep;
-                int y = valueToY(tempo, maxTempo, H, 40);
-
-                g.fillOval(x-6, y-6, 12, 12);
-                g.drawString(tempo + " ms", x-20, y-12);
-
-                if (e > 0 && mapExec.containsKey(execs[e-1])) {
-                    long prev = mapExec.get(execs[e-1]);
-                    int prevX = startX + (e-1)*gapExec - maxOffsetTotal/2 + bIdx * bookOffsetStep;
-                    int prevY = valueToY(prev, maxTempo, H, 40);
-                    g.setStroke(new BasicStroke(2f));
-                    g.drawLine(prevX, prevY, x, y);
-                }
-            }
-            // Legenda
-            g.setStroke(new BasicStroke(1f));
-            g.setColor(Color.BLACK);
-            g.drawString(book, W - 180, 60 + bIdx * 18);
-            g.setColor(colorForBook(book));
-            g.fillRect(W - 210, 52 + bIdx * 18, 12, 12);
-        }
-
-        g.dispose();
-        try { ImageIO.write(img, "png", new File(outPath)); } catch (IOException e) { System.out.println("Erro ao salvar serial.png: " + e.getMessage()); }
-    }
-
-    private static void gerarPNGCpu(Map<String, Map<Integer, Map<Integer, Long>>> dados, String outPath) {
-        if (dados.isEmpty()) {
-            System.out.println("⚠ cpu: sem dados para gerar gráfico");
-            return;
-        }
-
-        Set<Integer> threadsSet = new TreeSet<>();
-        for (Map<Integer, Map<Integer, Long>> m : dados.values()) threadsSet.addAll(m.keySet());
-        List<Integer> threadsList = new ArrayList<>(threadsSet);
-        if (threadsList.isEmpty()) {
-            System.out.println("⚠ cpu: sem threads encontradas");
-            return;
-        }
-
-        int W = 1200, H = 480;
-        int MARGIN = 70; // Margem unificada para alinhar eixo e dados
-
-        BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = img.createGraphics();
-        aplicarQualidade(g);
-
-        // Fundo Branco
-        g.setColor(Color.WHITE);
-        g.fillRect(0,0,W,H);
-
-        // Desenha eixos base
-        drawAxes(g, W, H, "Threads", "Tempo (ms)", MARGIN);
-
-        // Calcula Máximo
-        long maxTempo = 1;
-        Map<String, Map<Integer, Double>> medias = new LinkedHashMap<>();
-        for (String book : dados.keySet()) {
-            Map<Integer, Map<Integer, Long>> byThread = dados.get(book);
-            Map<Integer, Double> avgMap = new TreeMap<>();
-            for (Integer th : byThread.keySet()) {
-                Map<Integer, Long> execMap = byThread.get(th);
-                double sum = 0; int cnt=0;
-                for (Long t : execMap.values()) { sum += t; cnt++; }
-                if (cnt>0) {
-                    double avg = sum/cnt;
-                    avgMap.put(th, avg);
-                    if ((long) Math.ceil(avg) > maxTempo) maxTempo = (long) Math.ceil(avg);
-                }
-            }
-            medias.put(book, avgMap);
-        }
-
-        // --- NOVO: Desenha Escala do Eixo Y (Tempos) ---
-        g.setColor(Color.GRAY);
-        g.setFont(new Font("Arial", Font.PLAIN, 10));
-        int numDivisions = 5; // Quantas divisões no eixo Y
-        for (int i = 0; i <= numDivisions; i++) {
-            long val = (maxTempo * i) / numDivisions;
-            int yPos = valueToYDouble((double)val, maxTempo, H, MARGIN);
-
-            // Desenha linha de grade leve (opcional, ajuda na leitura)
-            g.setColor(new Color(240, 240, 240));
-            g.drawLine(MARGIN, yPos, W - MARGIN, yPos);
-
-            // Desenha o valor na esquerda (atrás do eixo Y)
-            g.setColor(Color.DARK_GRAY);
-            String label = String.valueOf(val);
-            // Ajusta posição X baseada no tamanho do texto para alinhar à direita
-            int strW = g.getFontMetrics().stringWidth(label);
-            g.drawString(label, MARGIN - strW - 8, yPos + 4);
-        }
-        // ------------------------------------------------
-
-        // Define posições X para threads
-        int left = MARGIN + 30;
-        int right = W - 120;
-        int plotW = right - left;
-        int gap = plotW / Math.max(1, threadsList.size()-1);
-
-        // Desenha labels do Eixo X (Threads)
-        g.setColor(Color.LIGHT_GRAY);
-        g.setFont(new Font("Arial", Font.BOLD, 12));
-        for (int i=0;i<threadsList.size();i++) {
-            int x = left + i * gap;
-            // Linha vertical leve
-            g.setColor(new Color(245,245,245));
-            g.drawLine(x, MARGIN, x, H - MARGIN);
-
-            // Número da thread
-            g.setColor(Color.BLACK);
-            g.drawString(String.valueOf(threadsList.get(i)), x-5, H - (MARGIN - 20));
-        }
-
-        // Desenha as linhas dos livros
-        int bIdx = 0;
-        for (String book : medias.keySet()) {
-            Color c = colorForBook(book);
-            g.setColor(c);
-            g.setStroke(new BasicStroke(3f));
-
-            Map<Integer, Double> avgMap = medias.get(book);
-            Integer prevX=null; Integer prevY=null;
-
-            for (int i=0;i<threadsList.size();i++) {
-                int th = threadsList.get(i);
-                if (!avgMap.containsKey(th)) continue;
-
-                double avg = avgMap.get(th);
-                int x = left + i*gap;
-                int y = valueToYDouble(avg, maxTempo, H, MARGIN);
-
-                // Ponto da média
-                g.fillOval(x-6,y-6,12,12);
-
-                // Linhas finas para execuções individuais (dispersão)
-                Map<Integer, Long> execs = dados.get(book).get(th);
-                if (execs != null) {
-                    int smallX = x - 20;
-                    int step = 18;
-                    g.setStroke(new BasicStroke(1.2f));
-                    g.setColor(c.darker());
-                    for (int execId : execs.keySet()) {
-                        long val = execs.get(execId);
-                        int sy = valueToY((int)val, maxTempo, H, MARGIN);
-                        g.drawLine(smallX, H - MARGIN, smallX, sy); // Linha do chão até o ponto
-                        g.fillOval(smallX-3, sy-3, 6,6);
-                        smallX += step;
-                    }
-                    g.setStroke(new BasicStroke(3f)); // Restaura linha grossa
-                    g.setColor(c);
-                }
-
-                // Conecta a linha média
-                if (prevX != null) {
-                    g.drawLine(prevX, prevY, x, y);
-                }
-                prevX = x; prevY = y;
-            }
-
-            // Legenda
-            g.setStroke(new BasicStroke(1f)); // Reset stroke para texto/box
-            g.setColor(Color.BLACK);
-            g.drawString(book, W - 180, 60 + bIdx * 18);
-            g.setColor(c);
-            g.fillRect(W - 200, 52 + bIdx * 18, 12, 12);
-            bIdx++;
-        }
-
-        g.dispose();
-        try { ImageIO.write(img, "png", new File(outPath)); } catch (IOException e) { System.out.println("Erro ao salvar cpu.png: " + e.getMessage()); }
-    }
-
-    private static void gerarPNGGPU(Map<String, Map<Integer, Long>> dados, String outPath) {
-        if (dados.isEmpty()) {
-            System.out.println("⚠ gpu: sem dados para gerar gráfico");
-            return;
-        }
-
-        int W = 1000, H = 420;
-        BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = img.createGraphics();
-        aplicarQualidade(g);
-
-        g.setColor(Color.WHITE); g.fillRect(0,0,W,H);
-        drawAxes(g, W, H, "Execução", "Tempo (ms)", 40);
-
-        int[] execs = {1,2,3};
-        int startX = 120; int gapExec = 220;
-        List<String> livros = new ArrayList<>(dados.keySet());
-        int booksCount = livros.size();
-        int bookOffsetStep = 30;
-        int maxOffsetTotal = (booksCount-1)*bookOffsetStep;
-
-        long maxTempo = maxTempoSerialOrGPU(dados);
-
-        for (int bIdx = 0; bIdx < livros.size(); bIdx++) {
-            String book = livros.get(bIdx);
-            Color c = colorForBook(book);
-            g.setColor(c);
-            Map<Integer, Long> mapExec = dados.get(book);
-            for (int e = 0; e < execs.length; e++) {
-                int exec = execs[e];
-                if (!mapExec.containsKey(exec)) continue;
-                long tempo = mapExec.get(exec);
-                int baseX = startX + e * gapExec;
-                int x = baseX - maxOffsetTotal/2 + bIdx * bookOffsetStep;
-                int y = valueToY(tempo, maxTempo, H, 40);
-                g.fillOval(x-6, y-6, 12, 12);
-                g.drawString(tempo + " ms", x-20, y-12);
-                if (e > 0 && mapExec.containsKey(execs[e-1])) {
-                    long prev = mapExec.get(execs[e-1]);
-                    int prevX = startX + (e-1)*gapExec - maxOffsetTotal/2 + bIdx * bookOffsetStep;
-                    int prevY = valueToY(prev, maxTempo, H, 40);
-                    g.setStroke(new BasicStroke(2f));
-                    g.drawLine(prevX, prevY, x, y);
-                }
-            }
-            g.setStroke(new BasicStroke(1f));
-            g.setColor(Color.BLACK);
-            g.drawString(book, W - 180, 60 + bIdx * 18);
-            g.setColor(colorForBook(book));
-            g.fillRect(W - 210, 52 + bIdx * 18, 12, 12);
-        }
-
-        g.dispose();
-        try { ImageIO.write(img, "png", new File(outPath)); } catch (IOException e) { System.out.println("Erro ao salvar gpu.png: " + e.getMessage()); }
-    }
-
-    // ----------------- Utilitários de desenho -----------------
+    // -------------------------------------------------------------------------
+    //                        DESENHO DOS GRÁFICOS
+    // -------------------------------------------------------------------------
 
     private static void aplicarQualidade(Graphics2D g) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
     }
 
-    private static void drawAxes(Graphics2D g, int W, int H, String xlabel, String ylabel, int margin) {
+    // Serve para Serial e GPU
+    private static void gerarPNGSerial(Map<String, Map<Integer, Long>> dados, String outPath) {
+        if (dados.isEmpty()) return;
+
+        int W = 1200, H = 600;
+        int MARGIN = 60;
+        BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        aplicarQualidade(g);
+
+        g.setColor(Color.WHITE); g.fillRect(0,0,W,H);
+        drawAxes(g, W, H, "Execução", "Tempo (ms)", MARGIN);
+
+        long maxTempo = getMaxTempoSimples(dados);
+        drawGrid(g, W, H, MARGIN, maxTempo);
+
+        int[] execs = {1,2,3};
+        int startX = 150;
+        int gapExec = 300;
+
+        // Offset para separar linhas sobrepostas
+        List<String> keys = new ArrayList<>(dados.keySet());
+        int offsetStep = 45; // Distância vertical forçada entre chaves
+        int totalOffset = (keys.size() - 1) * offsetStep;
+
+        for (int kIdx = 0; kIdx < keys.size(); kIdx++) {
+            String key = keys.get(kIdx);
+            Color c = getColor(key);
+            g.setColor(c);
+            Map<Integer, Long> mapExec = dados.get(key);
+
+            // Calcula o deslocamento vertical "falso" para evitar sobreposição visual exata
+            // O gráfico mostra o valor real no eixo Y, mas deslocamos visualmente o conjunto inteiro um pouco
+            // Ou melhor: mantemos Y real, mas deslocamos X ou rótulo.
+            // Para "aumentar a distância", vamos adicionar um offset fixo ao X para cada série
+            int serieOffsetX = (kIdx - keys.size()/2) * 20;
+
+            for (int e = 0; e < execs.length; e++) {
+                int exec = execs[e];
+                if (!mapExec.containsKey(exec)) continue;
+                long tempo = mapExec.get(exec);
+
+                int x = startX + e * gapExec + serieOffsetX;
+                int y = valueToY(tempo, maxTempo, H, MARGIN);
+
+                // Linha
+                if (e > 0 && mapExec.containsKey(execs[e-1])) {
+                    long prev = mapExec.get(execs[e-1]);
+                    int prevX = startX + (e-1)*gapExec + serieOffsetX;
+                    int prevY = valueToY(prev, maxTempo, H, MARGIN);
+                    g.setStroke(new BasicStroke(2f));
+                    g.drawLine(prevX, prevY, x, y);
+                }
+
+                // Ponto
+                g.fillOval(x-6, y-6, 12, 12);
+
+                // Rótulo com fundo para não misturar
+                drawLabel(g, tempo + "ms", x, y, c);
+            }
+
+            drawLegend(g, W, kIdx, key, c);
+        }
+        g.dispose();
+        salvarImagem(img, outPath);
+    }
+
+    // Serve para GPU (mesma estrutura de dados Map<Integer, Long>)
+    private static void gerarPNGGPU(Map<String, Map<Integer, Long>> dados, String outPath) {
+        gerarPNGSerial(dados, outPath); // Reutiliza o método pois a estrutura é idêntica
+    }
+
+    private static void gerarPNGCpu(Map<String, Map<Integer, Map<Integer, Long>>> dados, String outPath) {
+        if (dados.isEmpty()) return;
+
+        Set<Integer> threadsSet = new TreeSet<>();
+        for (var m : dados.values()) threadsSet.addAll(m.keySet());
+        List<Integer> threadsList = new ArrayList<>(threadsSet);
+
+        int W = 1400, H = 600;
+        int MARGIN = 80;
+
+        BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        aplicarQualidade(g);
+
+        g.setColor(Color.WHITE); g.fillRect(0,0,W,H);
+        drawAxes(g, W, H, "Threads", "Tempo Médio (ms)", MARGIN);
+
+        long maxTempo = getMaxTempoCPU(dados);
+        drawGrid(g, W, H, MARGIN, maxTempo);
+
+        int left = MARGIN + 50;
+        int right = W - 250;
+        int plotW = right - left;
+        int gap = plotW / Math.max(1, threadsList.size()-1);
+
+        // Labels eixo X
         g.setColor(Color.BLACK);
-        g.setStroke(new BasicStroke(1.5f));
-        // y-axis
-        g.drawLine(margin, margin, margin, H - margin);
-        // x-axis
-        g.drawLine(margin, H - margin, W - margin, H - margin);
-        // labels
         g.setFont(new Font("Arial", Font.BOLD, 12));
-        g.drawString(ylabel, margin - 20, margin - 10);
-        g.drawString(xlabel, W/2 - 20, H - 10);
-    }
-
-    private static int valueToY(long value, long maxValue, int H, int margin) {
-        if (maxValue <= 0) return H - margin;
-        double usable = H - 2.0 * margin;
-        double ratio = (double) value / (double) maxValue;
-        int y = (int) Math.round(H - margin - ratio * usable);
-        return Math.max(margin, Math.min(H - margin, y));
-    }
-
-    private static int valueToYDouble(double value, long maxValue, int H, int margin) {
-        if (maxValue <= 0) return H - margin;
-        double usable = H - 2.0 * margin;
-        double ratio = value / (double) maxValue;
-        int y = (int) Math.round(H - margin - ratio * usable);
-        return Math.max(margin, Math.min(H - margin, y));
-    }
-
-    private static long maxTempoSerialOrGPU(Map<String, Map<Integer, Long>> dados) {
-        long max = 1;
-        for (Map<Integer, Long> m : dados.values())
-            for (Long v : m.values()) if (v != null && v > max) max = v;
-        return max;
-    }
-
-    private static Color colorForBook(String book) {
-        String b = book.replace(".csv","").replace(".txt","").trim();
-        for (String key : BOOK_COLORS.keySet()) {
-            if (b.toLowerCase().contains(key.toLowerCase())) return BOOK_COLORS.get(key);
+        for (int i=0; i<threadsList.size(); i++) {
+            int x = left + i * gap;
+            g.drawString(threadsList.get(i) + " Threads", x-20, H - MARGIN + 25);
         }
-        if (!BOOK_COLORS.containsKey(b)) {
-            Random r = new Random(b.hashCode());
-            int R = 120 + r.nextInt(100);
-            int G = 120 + r.nextInt(100);
-            int B = 120 + r.nextInt(100);
-            Color c = new Color(R, G, B);
-            BOOK_COLORS.put(b, c);
-            return c;
-        } else {
-            return BOOK_COLORS.get(b);
+
+        List<String> keys = new ArrayList<>(dados.keySet());
+
+        for (int kIdx = 0; kIdx < keys.size(); kIdx++) {
+            String key = keys.get(kIdx);
+            Color c = getColor(key);
+            g.setColor(c);
+            g.setStroke(new BasicStroke(3f));
+
+            Map<Integer, Double> medias = calcularMedias(dados.get(key));
+
+            // Offset X pequeno para cada linha não ficar uma em cima da outra
+            int serieShiftX = (kIdx - keys.size()/2) * 12;
+
+            Integer prevX=null, prevY=null;
+
+            for (int i=0; i<threadsList.size(); i++) {
+                int th = threadsList.get(i);
+                if (!medias.containsKey(th)) continue;
+
+                double val = medias.get(th);
+                int x = left + i*gap + serieShiftX;
+                int y = valueToYDouble(val, maxTempo, H, MARGIN);
+
+                // Pontos de dispersão (bolinhas pequenas transparentes)
+                Map<Integer, Long> execs = dados.get(key).get(th);
+                if (execs != null) {
+                    g.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), 100));
+                    int dispersaoW = 20;
+                    int dx = x - dispersaoW;
+                    for (long raw : execs.values()) {
+                        int dy = valueToY(raw, maxTempo, H, MARGIN);
+                        g.fillOval(dx, dy-3, 6, 6);
+                        dx += 10;
+                    }
+                    g.setColor(c); // Volta cor sólida
+                }
+
+                if (prevX != null) g.drawLine(prevX, prevY, x, y);
+                g.fillOval(x-5, y-5, 10, 10);
+
+                // Exibe valor médio se houver espaço
+                if (i % 2 == 0 || kIdx % 2 == 0) { // Alterna labels para poluir menos
+                    drawLabel(g, String.format("%.0f", val), x, y, c);
+                }
+
+                prevX = x; prevY = y;
+            }
+            drawLegend(g, W, kIdx, key, c);
         }
+        g.dispose();
+        salvarImagem(img, outPath);
+    }
+
+    // -------------------------------------------------------------------------
+    //                        UTILITÁRIOS
+    // -------------------------------------------------------------------------
+
+    private static void drawAxes(Graphics2D g, int W, int H, String xLab, String yLab, int margin) {
+        g.setColor(Color.BLACK);
+        g.setStroke(new BasicStroke(2f));
+        g.drawLine(margin, margin, margin, H - margin);
+        g.drawLine(margin, H - margin, W - margin, H - margin);
+        g.setFont(new Font("SansSerif", Font.BOLD, 14));
+        g.drawString(yLab, margin - 40, margin - 15);
+        g.drawString(xLab, W/2, H - 10);
+    }
+
+    private static void drawGrid(Graphics2D g, int W, int H, int margin, long max) {
+        g.setColor(new Color(230,230,230));
+        g.setStroke(new BasicStroke(1f));
+        int steps = 10;
+        for (int i=1; i<=steps; i++) {
+            long val = (max * i) / steps;
+            int y = valueToY(val, max, H, margin);
+            g.drawLine(margin, y, W-margin, y);
+
+            g.setColor(Color.GRAY);
+            g.setFont(new Font("SansSerif", Font.PLAIN, 10));
+            g.drawString(String.valueOf(val), margin - 35, y + 5);
+            g.setColor(new Color(230,230,230));
+        }
+    }
+
+    private static void drawLabel(Graphics2D g, String txt, int x, int y, Color c) {
+        g.setFont(new Font("SansSerif", Font.BOLD, 11));
+        FontMetrics fm = g.getFontMetrics();
+        int w = fm.stringWidth(txt);
+        int h = fm.getHeight();
+
+        // Fundo branco semitransparente
+        g.setColor(new Color(255,255,255, 200));
+        g.fillRect(x - w/2 - 2, y - h - 5, w+4, h);
+
+        g.setColor(c.darker());
+        g.drawString(txt, x - w/2, y - 10);
+        g.setColor(c);
+    }
+
+    private static void drawLegend(Graphics2D g, int W, int idx, String txt, Color c) {
+        int x = W - 220;
+        int y = 80 + idx * 25;
+        g.setColor(c);
+        g.fillRect(x, y, 15, 15);
+        g.setColor(Color.DARK_GRAY);
+        g.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        g.drawString(txt, x + 20, y + 12);
+    }
+
+    private static int valueToY(long val, long max, int H, int margin) {
+        if (max == 0) return H - margin;
+        double usefulH = H - 2.0 * margin;
+        double ratio = (double) val / max;
+        return (int) (H - margin - (ratio * usefulH * 0.9)); // 0.9 deixa um teto livre
+    }
+
+    private static int valueToYDouble(double val, long max, int H, int margin) {
+        if (max == 0) return H - margin;
+        double usefulH = H - 2.0 * margin;
+        double ratio = val / max;
+        return (int) (H - margin - (ratio * usefulH * 0.9));
+    }
+
+    private static long getMaxTempoSimples(Map<String, Map<Integer, Long>> dados) {
+        long m = 1;
+        for (var map : dados.values()) {
+            for (long v : map.values()) if (v > m) m = v;
+        }
+        return m;
+    }
+
+    private static long getMaxTempoCPU(Map<String, Map<Integer, Map<Integer, Long>>> dados) {
+        long m = 1;
+        for (var mapTh : dados.values()) {
+            for (var mapEx : mapTh.values()) {
+                for (long v : mapEx.values()) if (v > m) m = v;
+            }
+        }
+        return m;
+    }
+
+    private static Map<Integer, Double> calcularMedias(Map<Integer, Map<Integer, Long>> dadosThread) {
+        Map<Integer, Double> medias = new TreeMap<>();
+        for (var entry : dadosThread.entrySet()) {
+            double soma = 0;
+            int count = 0;
+            for (long v : entry.getValue().values()) {
+                soma += v; count++;
+            }
+            if (count > 0) medias.put(entry.getKey(), soma/count);
+        }
+        return medias;
+    }
+
+    private static void salvarImagem(BufferedImage img, String path) {
+        try { ImageIO.write(img, "png", new File(path)); } catch (IOException e) { e.printStackTrace(); }
     }
 }

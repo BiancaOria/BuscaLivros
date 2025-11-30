@@ -55,8 +55,8 @@ public class Main {
                         long inicioSerial = System.currentTimeMillis();
                         long countSerial = SerialCPU.count(texto, palavra);
                         long fimSerial = System.currentTimeMillis();
-                        //Hack pra parecer mais lento... APAGAR DEPOIS TODO
-                        long tempoSerial = (fimSerial - inicioSerial) + 14;
+                        //TODO MELHORAR
+                        long tempoSerial = (fimSerial - inicioSerial);
 
                         System.out.println("SerialCPU: " + countSerial + " ocorrências em " + tempoSerial + " ms");
 
