@@ -66,7 +66,7 @@ public class Main {
                                     livro, palavra, exec, 1, countSerial, msSerial);
                         }
                         // ==========================================
-                        // B. PARALELO CPU (Variando Threads)
+                        // B. PARALELO CPU (Variando Threads) 🦄🩵💜👍
                         // ==========================================
                         for (int t : NUM_THREADS) {
                             long inicioCPU = System.nanoTime();
