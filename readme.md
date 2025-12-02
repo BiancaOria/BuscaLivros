@@ -6,7 +6,7 @@ CURSO: CIÊNCIA DA COMPUTAÇÃO
 
 ---
 
-## Análise de Desempenho em Busca Textual: Comparativo CPU (Serial/Paralelo) e GPU
+## Análise Comparativa de Algoritmos com Uso de Paralelismo 
 
 **Autor 1:** BIANCA ORIÁ
 
@@ -14,7 +14,7 @@ CURSO: CIÊNCIA DA COMPUTAÇÃO
 
 ---
 
-**Palavras-chave:** Computação Paralela. OpenCL. Processamento de Texto. Desempenho. Java Threads.
+**Palavras-chave:** Computação Paralela. Processamento de Texto. Desempenho. 
 
 ---
 
@@ -52,21 +52,59 @@ Os gráficos a seguir ilustram o tempo de execução (em milissegundos) para as 
 ### 1. Execução Serial
 A abordagem serial mostrou-se surpreendentemente eficiente, com tempos variando entre **0,8ms e 2,7ms**. Devido à simplicidade da operação (comparação de *strings*), a CPU moderna consegue processar os dados aproveitando eficientemente os caches, sem o custo de gerenciar múltiplos contextos.
 
-[Inserir aqui a imagem: serial.png]
+<div align="center">
+  
+  ### 1. Execução Serial
+  <img width="1200" height="1200" alt="Image" src="https://github.com/user-attachments/assets/cdd16403-e8c0-4103-b573-d30f6fafa1f0" />
+  Fonte: Elaborado pelo autor.
+  
+</div>
+
 
 ### 2. Execução Paralela em CPU (4, 6 e 12 Threads)
 Ao dividir a tarefa, observou-se um comportamento não linear:
 * **4 e 6 Threads:** O desempenho manteve-se próximo ao serial, com ligeiros ganhos em algumas execuções, mas frequentemente o custo de criação das *threads* anulou o ganho da divisão do trabalho.
 * **12 Threads:** Houve uma degradação de desempenho (tempos subindo para médias superiores a 2,0ms). Isso ocorre porque o sistema operacional gasta mais tempo alternando entre as 12 *threads* do que elas gastam efetivamente contando palavras, já que a tarefa é extremamente rápida.
 
-[Inserir aqui a imagem: cpu_4_threads.png]
-[Inserir aqui a imagem: cpu_12_threads.png]
+
+<div align="center">
+  
+  ### 2. Execução Paralela em CPU com 4 Threads
+  <img width="1200" height="1200" alt="Image" src="https://github.com/user-attachments/assets/c0c9d542-1313-4ce2-8faa-22ad174e8f03" />
+  Fonte: Elaborado pelo autor.
+  
+</div>
+
+<div align="center">
+  
+  ### 3. Execução Paralela em CPU com 6 Threads
+  <img width="1200" height="1200" alt="Image" src="https://github.com/user-attachments/assets/8ad949ab-ffd0-49ac-b2cf-8497378d91b3" />
+  Fonte: Elaborado pelo autor.
+  
+</div>
+
+
+<div align="center">
+
+  ### 4. Execução Paralela em CPU com 12 Threads
+  <img width="1200" height="1200" alt="Image" src="https://github.com/user-attachments/assets/6c2e137f-ebe9-40e3-9255-e9622824c708" />
+  Fonte: Elaborado pelo autor.
+  
+</div>
+
 
 ### 3. Execução em GPU (OpenCL)
 A execução em GPU apresentou os maiores tempos, variando entre **2,1ms e 4,7ms**.
 Embora a GPU possua milhares de núcleos, o gargalo neste experimento foi a latência de transferência de memória. O tempo necessário para copiar o vetor de palavras da memória RAM para a memória de vídeo é superior ao tempo que a CPU leva para ler e contar as palavras diretamente. Além disso, há o custo de compilação do *kernel* OpenCL e o pré-processamento dos dados (conversão para *hash*).
 
-[Inserir aqui a imagem: gpu.png]
+<div align="center">
+
+  ### 5. Execução em GPU
+  <img width="1200" height="1200" alt="Image" src="https://github.com/user-attachments/assets/ead1d26c-78fd-4f1e-844c-b2c735e45a1d" />
+  Fonte: Elaborado pelo autor.
+  
+</div>
+
 
 ---
 
@@ -92,4 +130,4 @@ SILBERSCHATZ, A.; GALVIN, P. B.; GAGNE, G. *Sistemas Operacionais com Java*. Rio
 
 ## Anexos
 
-Códigos fontes e arquivos de saída (.csv) disponíveis no repositório do projeto.
+Códigos das implementações disponíveis em: https://github.com/BiancaOria/BuscaLivros
