@@ -1,2 +1,2 @@
-Livro,Palavra,Execucao,Count,TempoMs
-MobyDick.txt,the,3,14727,91
+Livro;Palavra;Execucao;Threads;Count;TempoMs
+MobyDick.txt;the;3;0;14727;2,8681

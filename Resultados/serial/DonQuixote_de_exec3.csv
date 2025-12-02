@@ -1,2 +1,2 @@
-Livro,Palavra,Execucao,Threads,Count,TempoMs
-DonQuixote.txt,de,3,1,18409,15
+Livro;Palavra;Execucao;Threads;Count;TempoMs
+DonQuixote.txt;de;3;1;18409;2,0083

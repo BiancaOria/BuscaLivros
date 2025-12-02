@@ -1,2 +1,2 @@
-Livro,Palavra,Execucao,Threads,Count,TempoMs
-Dracula.txt,to,3,6,4746,0
+Livro;Palavra;Execucao;Threads;Count;TempoMs
+Dracula.txt;to;3;6;4746;1,2940
